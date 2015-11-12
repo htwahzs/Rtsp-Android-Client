@@ -19,8 +19,10 @@
 
 #### 使用方法
 
-1. 导入并修改解压包中相应包名
-2. 调用RtspClient包
+1. 使用Jcenter仓库
+	compile "com.aaronhan:rtspclient:0.6"
+	
+2. 调用RtspClient方法
 ```java
 private SurfaceView mSurfaceView;
 
