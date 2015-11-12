@@ -20,7 +20,7 @@
 #### 使用方法
 
 1. 使用Jcenter仓库
-	compile "com.aaronhan:rtspclient:0.6"
+>	compile "com.aaronhan:rtspclient:0.6"
 	
 2. 调用RtspClient方法
 ```java
