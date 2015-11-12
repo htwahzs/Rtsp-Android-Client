@@ -43,7 +43,8 @@ mRtspClient.shutdown();
 //使用RTP传输协议选择，支持"tcp"和"udp"传入值
 String method = "udp";
 
-//传入地址，需以rtsp://开头，支持地址后加入端口地址，"rtsp://ip:port/xxx"
+//传入地址，需以rtsp://开头，如果只有IP，需以/结尾，如rtsp://xxx.xxx.xxx.xxx/
+//支持地址后加入端口地址，"rtsp://ip:port/xxx"
 //如未加入端口地址，则使用默认地址554
 String host = "rtsp://192.168.0.217/test.264"
 
