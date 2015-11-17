@@ -24,6 +24,8 @@ public class RtcpSocket {
     private byte[] message = new byte[2048];
     private String serverIp;
     private int serverPort;
+    private boolean isStoped;
+    private HandlerThread thread;
 
     public RtcpSocket(int port, String serverIp, int serverPort) {
         try {
@@ -31,8 +33,9 @@ public class RtcpSocket {
             this.serverPort = serverPort;
             mSocket = new DatagramSocket(port);
             mPacket = new DatagramPacket(message,message.length);
-            HandlerThread thread = new HandlerThread("RTCPSocketThread");
+            thread = new HandlerThread("RTCPSocketThread");
             thread.start();
+            isStoped = false;
             mHandler = new Handler(thread.getLooper());
         } catch ( SocketException e ) {
             e.printStackTrace();
@@ -43,7 +46,7 @@ public class RtcpSocket {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                while ( true ) {
+                while ( !isStoped ) {
                     try {
                         mSocket.receive(mPacket);
                     } catch (IOException e) {
@@ -59,6 +62,8 @@ public class RtcpSocket {
         mSocket.close();
         mSocket = null;
         mPacket = null;
+        isStoped = true;
+        thread.quit();
     }
 
     public void sendReciverReport() {

@@ -120,4 +120,9 @@ public abstract class VideoStream extends RtpStream {
             decodeH264Stream();
         }
     }
+
+    public void stop() {
+        NALUnit = null;
+        super.stop();
+    }
 }

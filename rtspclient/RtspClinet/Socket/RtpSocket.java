@@ -39,9 +39,10 @@ public class RtpSocket implements Runnable {
     private RtpStream mRtpStream;
     private int serverPort;
     private long recordTime = 0;
-    private boolean useRtspTcpSocket;
+    private boolean useRtspTcpSocket,isStoped;
     private InputStream  rtspInputStream;
     private LinkedBlockingDeque<byte[]> tcpBuffer = new LinkedBlockingDeque<>();
+    private Thread tcpThread;
 
     private static class rtspPacketInfo {
         public int len;
@@ -58,6 +59,7 @@ public class RtpSocket implements Runnable {
         this.trackType = trackType;
         this.isTcptranslate = isTcptranslate;
         this.serverPort = serverPort;
+        this.isStoped = false;
         if(serverPort == -1) useRtspTcpSocket = false;
         else if(serverPort == -2) useRtspTcpSocket = true;
         try {
@@ -84,12 +86,12 @@ public class RtpSocket implements Runnable {
     }
 
     private void tcpRecombineThread() {
-        new Thread(new Runnable() {
+        tcpThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 rtspBuffer.inNextPacket = false;
                 int offset;
-                while (!Thread.interrupted()) {
+                while (!Thread.interrupted() && !isStoped) {
                     try {
                         byte[] tcpbuffer = tcpBuffer.take();
                         offset = 0;
@@ -121,7 +123,8 @@ public class RtpSocket implements Runnable {
                     }
                 }
             }
-        },"TcpPacketRecombineThread").start();
+        },"TcpPacketRecombineThread");
+        tcpThread.start();
     }
 
     private void analysisOnePacket(byte[] data, int offset){
@@ -261,14 +264,22 @@ public class RtpSocket implements Runnable {
 
     public void stop() throws IOException {
         if(isTcptranslate) {
-            mTcpSocket.close();
-            mTcpPackets = null;
+            if(mTcpSocket != null) {
+                mTcpSocket.close();
+                mTcpPackets = null;
+            }
         }
         else{
             mUdpSocket.close();
             mUdpPackets = null;
         }
-        mRtpStream.stop();
-        mRtcpSocket.stop();
+        if(mRtcpSocket!=null){
+            mRtcpSocket.stop();
+            mRtcpSocket = null;
+        }
+        if(mThread!=null) mThread.interrupt();
+        isStoped = true;
+        if(rtspBuffer!=null) rtspBuffer=null;
+        tcpThread.interrupt();
     }
 }

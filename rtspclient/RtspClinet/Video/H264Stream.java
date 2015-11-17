@@ -9,6 +9,8 @@ import android.os.HandlerThread;
 import android.util.Base64;
 import android.util.Log;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewStub;
 
 import com.aaronhan.rtspclient.RtspClient;
 
@@ -29,18 +31,20 @@ public class H264Stream extends VideoStream {
     private LinkedBlockingDeque<byte[]> bufferQueue = new LinkedBlockingDeque<>();
     private int picWidth,picHeight;
     byte[] header_sps,header_pps;
+    private boolean isStop;
+    private HandlerThread thread;
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
 
     public H264Stream(RtspClient.SDPInfo sp) {
         mSDPinfo = sp;
-        HandlerThread thread = new HandlerThread("H264StreamThread");
+        thread = new HandlerThread("H264StreamThread");
         thread.start();
         mHandler = new Handler(thread.getLooper());
         if(sp.SPS != null) decodeSPS();
     }
 
-    private void configMediaDeoceder(){
+    private void configMediaDecoder(){
         if(Build.VERSION.SDK_INT > 15) {
             try {
                 mMeidaCodec = MediaCodec.createDecoderByType("Video/AVC");
@@ -53,68 +57,74 @@ public class H264Stream extends VideoStream {
                 mMeidaCodec.configure(mediaFormat, mSurfaceView.getHolder().getSurface(), null, 0);
                 mMeidaCodec.start();
                 inputBuffers = mMeidaCodec.getInputBuffers();
+                isStop = false;
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    public void startMediaHardwareDecode() {
-        if(Build.VERSION.SDK_INT > 15) {
-            mHandler.post(new Runnable() {
-                @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-                @Override
-                public void run() {
-                    int mCount = 0;
-                    int inputBufferIndex,outputBufferIndex;
-                    MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                    byte[] tmpByte;
-                    int framType;
-                    boolean startKeyFrame = false;
 
-                    configMediaDeoceder();
-                    while (!Thread.interrupted()) {
-                        try {
-                            tmpByte = bufferQueue.take();
-                            framType = tmpByte[4]&0x1F;
-                            if(framType == 5) startKeyFrame = true;
-                            if(startKeyFrame || framType == 7 || framType == 8) {
-                                inputBufferIndex = mMeidaCodec.dequeueInputBuffer(2000);
-                                if (inputBufferIndex > 1) {
-                                    ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
-                                    inputBuffer.clear();
-                                    inputBuffer.put(tmpByte);
-                                    mMeidaCodec.queueInputBuffer(inputBufferIndex, 0, tmpByte.length, mCount, 0);
-                                    outputBufferIndex = mMeidaCodec.dequeueOutputBuffer(info, 1000);
-                                    switch (outputBufferIndex) {
-                                        case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
-                                            break;
-                                        case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
-                                            break;
-                                        case MediaCodec.INFO_TRY_AGAIN_LATER:
-                                            break;
-                                        default:
-                                            mMeidaCodec.releaseOutputBuffer(outputBufferIndex, true);
-                                            break;
-                                    }
-                                    mCount++;
-                                }
+    public void startMediaHardwareDecode() {
+        mHandler.post(hardwareDecodeThread);
+    }
+
+    private Runnable hardwareDecodeThread = new Runnable() {
+        @Override
+        public void run() {
+            int mCount = 0;
+            int inputBufferIndex,outputBufferIndex;
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            byte[] tmpByte;
+            int framType;
+            boolean startKeyFrame = false;
+
+            configMediaDecoder();
+            while (!Thread.interrupted() && !isStop) {
+                try {
+                    tmpByte = bufferQueue.take();
+                    framType = tmpByte[4]&0x1F;
+                    if(framType == 5) startKeyFrame = true;
+                    if(startKeyFrame || framType == 7 || framType == 8) {
+                        inputBufferIndex = mMeidaCodec.dequeueInputBuffer(2000);
+                        if (inputBufferIndex > 1) {
+                            ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
+                            inputBuffer.clear();
+                            inputBuffer.put(tmpByte);
+                            mMeidaCodec.queueInputBuffer(inputBufferIndex, 0, tmpByte.length, mCount, 0);
+                            outputBufferIndex = mMeidaCodec.dequeueOutputBuffer(info, 1000);
+                            switch (outputBufferIndex) {
+                                case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
+                                    break;
+                                case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
+                                    break;
+                                case MediaCodec.INFO_TRY_AGAIN_LATER:
+                                    break;
+                                default:
+                                    mMeidaCodec.releaseOutputBuffer(outputBufferIndex, true);
+                                    break;
                             }
-                        } catch (InterruptedException e) {
-                            Log.e(tag,"Wait the buffer come..");
+                            mCount++;
                         }
                     }
-                    bufferQueue.clear();
-                    mMeidaCodec.stop();
-                    mMeidaCodec.release();
-                    mMeidaCodec = null;
+                } catch (InterruptedException e) {
+                    Log.e(tag,"Wait the buffer come..");
                 }
-            });
+            }
+            bufferQueue.clear();
+            mMeidaCodec.stop();
+            mMeidaCodec.release();
+            mMeidaCodec = null;
         }
-    }
+    };
 
     public void stop(){
         bufferQueue.clear();
+        isStop = true;
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {}
+        mHandler.removeCallbacks(hardwareDecodeThread);
         if(mMeidaCodec != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
                 mMeidaCodec.stop();
@@ -122,6 +132,10 @@ public class H264Stream extends VideoStream {
             }
             mMeidaCodec = null;
         }
+        super.stop();
+        thread.quit();
+        mSurfaceView.setVisibility(ViewStub.GONE);
+        mSurfaceView.setVisibility(ViewStub.VISIBLE);
     }
 
     /* This method is used to decode pic width and height from the sps info,

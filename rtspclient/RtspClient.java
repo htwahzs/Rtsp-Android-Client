@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 public class RtspClient {
 
     private final static String tag = "ComfdRtspClient";
-    private final static String UserAgent = "Comfd-Rtsp/0.1";
+    private final static String UserAgent = "Rtsp/0.1";
     private final static int STATE_STARTED = 0x00;
     private final static int STATE_STARTING = 0x01;
     private final static int STATE_STOPPING = 0x02;
@@ -68,6 +68,7 @@ public class RtspClient {
     private static boolean Describeflag = false; //used to get SDP info
     private static SDPInfo sdpInfo;
     private String authorName, authorPassword, authorBase64;
+    private HandlerThread thread;
 
     private H264Stream mH264Stream;
 
@@ -147,34 +148,37 @@ public class RtspClient {
         }
 
         final Semaphore signal = new Semaphore(0);
-        new HandlerThread("RTSPCilentThread") {
+        thread = new HandlerThread("RTSPCilentThread") {
             protected void onLooperPrepared() {
                 mHandler = new Handler();
                 signal.release();
             }
-        }.start();
+        };
+        thread.start();
         signal.acquireUninterruptibly();
     }
 
     public void start() {
-        mHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (mState != STATE_STOPPED) return;
-                mState = STATE_STARTING;
-
-                Log.d(tag, "Start to connect the server...");
-
-                try {
-                    tryConnection();
-                    mHandler.post(sendGetParameter);
-                } catch (IOException e) {
-                    Log.e(tag, e.toString());
-                    abort();
-                }
-            }
-        });
+        mHandler.post(startConnection);
     }
+
+    private Runnable startConnection = new Runnable() {
+        @Override
+        public void run() {
+            if (mState != STATE_STOPPED) return;
+            mState = STATE_STARTING;
+
+            Log.d(tag, "Start to connect the server...");
+
+            try {
+                tryConnection();
+                mHandler.post(sendGetParameter);
+            } catch (IOException e) {
+                Log.e(tag, e.toString());
+                abort();
+            }
+        }
+    };
 
     private Runnable sendGetParameter = new Runnable() {
         @Override
@@ -190,25 +194,41 @@ public class RtspClient {
 
     public void abort() {
         try {
-            sendRequestTeardown();
+            if(mState == STATE_STARTED) sendRequestTeardown();
         } catch ( IOException e ) {}
         try {
-            mSocket.close();
+            if(mSocket!=null) mSocket.close();
         } catch ( IOException e ) {}
         mState = STATE_STOPPED;
+        mHandler.removeCallbacks(startConnection);
         mHandler.removeCallbacks(sendGetParameter);
     }
 
     public void shutdown(){
-        abort();
-        try {
-            mSocket.close();
-            mRtpSocket.stop();
-            mH264Stream.stop();
-        } catch (IOException e) {
-            e.printStackTrace();
+        if(mState == STATE_STARTED ||
+                mState == STATE_STARTING) {
+            mHandler.removeCallbacks(startConnection);
+            mHandler.removeCallbacks(sendGetParameter);
+            try {
+                if(mH264Stream!=null) {
+                    mH264Stream.stop();
+                    mH264Stream = null;
+                }
+                if(mRtpSocket!=null) {
+                    mRtpSocket.stop();
+                    mRtpSocket = null;
+                }
+                if(mState == STATE_STARTED) sendRequestTeardown();
+                if(mSocket!=null) {
+                    mSocket.close();
+                    mSocket = null;
+                }
+                mState = STATE_STOPPED;
+                thread.quit();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
-
     }
 
     public boolean isStarted() {
@@ -219,7 +239,7 @@ public class RtspClient {
         mSocket = new Socket(mParams.host, mParams.port);
         mBufferreader = new BufferedReader(new InputStreamReader(mSocket.getInputStream()));
         mOutputStream = mSocket.getOutputStream();
-
+        mState = STATE_STARTING;
         sendRequestOptions();
         sendRequestDescribe();
         sendRequestSetup();
@@ -292,6 +312,7 @@ public class RtspClient {
                 mRtpSocket.setRtspSocket(mSocket);
                 mRtpSocket.startRtpSocket();
                 mRtpSocket.setStream(mH264Stream);
+                mState = STATE_STARTED;
             }
         }
     }
@@ -309,6 +330,7 @@ public class RtspClient {
         String request = "TEARDOWN rtsp://" + mParams.address + "/" + sdpInfo.videoTrack + " RTSP/1.0\r\n" + addHeaders();
         Log.d(tag, request.substring(0, request.indexOf("\r\n")));
         mOutputStream.write(request.getBytes("UTF-8"));
+        mState = STATE_STOPPING;
     }
 
     private void sendRequestGetParameter() throws IOException {

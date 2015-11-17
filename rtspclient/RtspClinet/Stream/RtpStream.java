@@ -20,6 +20,8 @@ public abstract class RtpStream {
 
     private Handler mHandler;
     private byte[] buffer;
+    private HandlerThread thread;
+    private boolean isStoped;
 
     protected class StreamPacks {
         public boolean mark;
@@ -38,10 +40,11 @@ public abstract class RtpStream {
     private static LinkedBlockingDeque<bufferUnit> bufferQueue = new LinkedBlockingDeque<>();
 
     public RtpStream() {
-        HandlerThread thread = new HandlerThread("RTPStreamThread");
+        thread = new HandlerThread("RTPStreamThread");
         thread.start();
         mHandler = new Handler(thread.getLooper());
         unpackThread();
+        isStoped = false;
     }
 
     public static void receiveData(byte[] data, int len) {
@@ -60,7 +63,7 @@ public abstract class RtpStream {
             @Override
             public void run() {
                 bufferUnit tmpBuffer;
-                while (!Thread.interrupted()) {
+                while (!isStoped) {
                     try {
                         tmpBuffer = bufferQueue.take();
                         buffer = new byte[tmpBuffer.len];
@@ -77,8 +80,15 @@ public abstract class RtpStream {
     }
 
     public void stop(){
+        isStoped = true;
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         bufferQueue.clear();
         buffer = null;
+        thread.quit();
     }
 
 
@@ -86,6 +96,7 @@ public abstract class RtpStream {
 
     private void unpackData() {
         StreamPacks tmpStreampack = new StreamPacks();
+        if(buffer.length == 0) return;
         int rtpVersion = (buffer[0]&0xFF)>>6;
         if(rtpVersion != 2) {
             Log.e(tag,"This is not a rtp packet.");
