@@ -170,7 +170,7 @@ public class RtpSocket implements Runnable {
     private int[] getRtspFrameInfo(byte[] data,int offset){
         int mOffset,length;
         boolean haveRtspFrame = false;
-        for(mOffset = offset; mOffset< data.length-1; mOffset++){
+        for(mOffset = offset; mOffset< data.length-1; ++mOffset){
             if(data[mOffset] == 0x24 && data[mOffset+1] == 0x00) {
                 haveRtspFrame = true;
                 break;

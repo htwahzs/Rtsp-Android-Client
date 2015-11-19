@@ -92,7 +92,7 @@ public abstract class VideoStream extends RtpStream {
                         tmpLen = 4;
                         System.arraycopy(buffer[1], 0, NALUnit, tmpLen, buffer[1].length);
                         tmpLen += buffer[1].length;
-                        for(int i = 2; i < packetNum+1; i++) {
+                        for(int i = 2; i < packetNum+1; ++i) {
                             System.arraycopy(buffer[i],0,NALUnit,tmpLen,buffer[i].length);
                             tmpLen += buffer[i].length;
                         }

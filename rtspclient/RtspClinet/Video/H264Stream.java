@@ -180,7 +180,7 @@ public class H264Stream extends VideoStream {
             offset += getUeLen(sps,offset); //jump offset_for_top_to_bottom_field
             int num_ref_frames_inpic_order_cnt_cycle = ( sps[(offset+getUeLen(sps,offset))/8] >>
                     (7-((offset+getUeLen(sps,offset))%8)) );
-            for(i=0; i<num_ref_frames_inpic_order_cnt_cycle; i++)
+            for(i=0; i<num_ref_frames_inpic_order_cnt_cycle; ++i)
                 offset += getUeLen(sps,offset); //jump ref_frames_inpic_order
         }
         offset += getUeLen(sps,offset); // jump num_ref_frames
@@ -218,7 +218,7 @@ public class H264Stream extends VideoStream {
         byte[] tmpB = new byte[tmplen];
         byte[] tmpA = new byte[tmplen];
         int i;
-        for(i = 0;i<tmplen;i++) {
+        for(i = 0;i<tmplen;++i) {
             if(i == 0) tmpB[i] = (byte) (bytes[offset/8] << (offset%8) >> (offset%8));
             else if(i+1 == tmplen) tmpB[i] = (byte) ((bytes[offset/8+i] & 0xFF) >> lastByteZeroNum);
             else tmpB[i] = bytes[offset/8+i];
